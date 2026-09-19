@@ -14,7 +14,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 app = Flask(__name__)
 DB_PATH = "visits.db"
 
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
+# app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 ADMIN_USER = os.getenv("ADMIN_USER")
@@ -58,6 +58,17 @@ def _send_to_discord(payload):
     except requests.RequestException:
         pass  # a Discord outage shouldn't break the site
 
+def get_client_ip():
+    # Render sits behind Cloudflare, which sets these headers
+    for header in ("CF-Connecting-IP", "True-Client-IP"):
+        value = request.headers.get(header)
+        if value:
+            return value.strip()
+    # Fallback: the first address in X-Forwarded-For is the original client
+    xff = request.headers.get("X-Forwarded-For", "")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.remote_addr
 
 def notify_discord(ip, user_agent, path):
     if not DISCORD_WEBHOOK_URL:
@@ -92,7 +103,7 @@ def require_auth(f):
 # ---------- Routes ----------
 @app.route("/")
 def index():
-    ip = request.remote_addr
+    ip = get_client_ip()
     ua = request.headers.get("User-Agent", "")[:300]
     db = get_db()
     db.execute(
@@ -112,6 +123,10 @@ def logs():
     ).fetchall()
     return render_template("logs.html", rows=rows)
 
+@app.route("/admin/headers")
+@require_auth
+def headers_debug():
+    return "<pre>" + "\n".join(f"{k}: {v}" for k, v in request.headers) + "</pre>"
 
 init_db()  # runs at import time so it also works under gunicorn
 
