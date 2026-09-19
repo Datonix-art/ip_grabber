@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from functools import wraps
 
 import requests
-from flask import Flask, request, render_template, Response, g
+from flask import Flask, request, render_template, Response, g, redirect
 from werkzeug.middleware.proxy_fix import ProxyFix
 from dotenv import load_dotenv
 
@@ -112,7 +112,7 @@ def index():
     )
     db.commit()
     notify_discord(ip, ua, request.path)
-    return render_template("index.html")
+    return redirect("https://www.instagram.com/kobaladz_?stkn=MXBodW96dTFzNmhkdQ%3D%3D")
 
 
 @app.route("/admin/logs")
