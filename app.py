@@ -740,10 +740,9 @@ def get_or_create_visitor_id():
     visitor_id = request.cookies.get("visitor_id")
 
     if visitor_id:
-        return visitor_id, False
+        return visitor_id, True
 
-    visitor_id = str(uuid.uuid4())
-    return visitor_id, True
+    return str(uuid.uuid4()), False
 
 # visitor route
 
@@ -807,6 +806,11 @@ def collect():
         ) or {}
 
         server_data = collect_http_data()
+
+        visitor_id = request.cookies.get("visitor_id")
+
+        browser_data["visitor_id"] = visitor_id
+        browser_data["returning_visitor"] = visitor_id is not None
 
         user_agent = server_data.get(
             "user_agent",
